@@ -1,0 +1,7 @@
+nodeLinker: hoisted
+storeDir: .pnpm-store
+onlyBuiltDependencies:
+  - esbuild
+  - prisma
+  - '@prisma/client'
+  - '@prisma/engines'

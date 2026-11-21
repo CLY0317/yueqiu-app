@@ -1,0 +1,25 @@
+# 可选：用 Docker 起一个本地 PostgreSQL，然后把项目切过去
+#   docker compose up -d
+#   node scripts/db-provider.mjs postgresql
+#   pnpm db:generate && pnpm db:migrate && pnpm db:reset
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: yueqiu-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yueqiu
+      POSTGRES_PASSWORD: yueqiu
+      POSTGRES_DB: yueqiu
+    ports:
+      - '5432:5432'
+    volumes:
+      - yueqiu-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U yueqiu -d yueqiu']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  yueqiu-pg:

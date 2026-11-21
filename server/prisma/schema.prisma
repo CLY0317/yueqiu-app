@@ -1,0 +1,185 @@
+// 说明：默认用 SQLite（零安装、可跑）。切 PostgreSQL 见 README 的「换数据库」一节。
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  name      String
+  level     Float    @default(3)
+  district  String   @default("浦东新区")
+  createdAt DateTime @default(now())
+
+  refreshTokens RefreshToken[]
+  gamesHosted   Game[]         @relation("GameHost")
+  memberships   GamePlayer[]
+  posts         Post[]
+  comments      Comment[]
+  likes         PostLike[]
+  orders        Order[]
+  notifications Notification[]
+}
+
+/// 刷新令牌：只存 sha256 摘要，支持轮换与吊销
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+/// 短信验证码（演示环境不真发短信，验证码随响应返回）
+model SmsCode {
+  id        String    @id @default(cuid())
+  phone     String
+  code      String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([phone, createdAt])
+}
+
+model Venue {
+  id         String      @id @default(cuid())
+  name       String
+  area       String
+  distanceKm Float
+  courts     Int
+  price      Int
+  tag        String
+  slots      CourtSlot[]
+  games      Game[]
+}
+
+/// 场馆可订时段（约球顺带把场订了）
+model CourtSlot {
+  id        String  @id @default(cuid())
+  venueId   String
+  venue     Venue   @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  date      String
+  startTime String
+  duration  Int
+  price     Int
+  status    String  @default("free") // free | booked
+  game      Game?
+
+  @@unique([venueId, date, startTime])
+  @@index([date, status])
+}
+
+model Game {
+  id         String   @id @default(cuid())
+  title      String
+  venueId    String
+  venue      Venue    @relation(fields: [venueId], references: [id])
+  slotId     String?  @unique
+  slot       CourtSlot? @relation(fields: [slotId], references: [id])
+  date       String
+  startTime  String
+  duration   Int
+  mode       String
+  maxPlayers Int
+  levelMin   Float
+  levelMax   Float
+  fee        Int
+  note       String   @default("")
+  status     String   @default("open") // open | cancelled
+  version    Int      @default(1)
+  hostId     String
+  host       User     @relation("GameHost", fields: [hostId], references: [id])
+  createdAt  DateTime @default(now())
+
+  players GamePlayer[]
+  orders  Order[]
+
+  @@index([date, startTime])
+}
+
+model GamePlayer {
+  gameId   String
+  userId   String
+  game     Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+  isHost   Boolean  @default(false)
+
+  @@id([gameId, userId])
+}
+
+/// AA 分摊订单：每人一份，报名即生成 pending 订单
+model Order {
+  id         String    @id @default(cuid())
+  gameId     String
+  game       Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount     Int
+  status     String    @default("unpaid") // unpaid | paid | refunded
+  paidAt     DateTime?
+  refundedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([gameId, userId])
+  @@index([userId, status])
+}
+
+model Post {
+  id           String    @id @default(cuid())
+  authorId     String
+  author       User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  text         String
+  commentCount Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  likes    PostLike[]
+  comments Comment[]
+}
+
+model PostLike {
+  postId    String
+  userId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([postId, userId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // game_join | game_cancel | comment | payment | system
+  title     String
+  body      String
+  refId     String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}

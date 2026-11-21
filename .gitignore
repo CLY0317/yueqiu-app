@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.pnpm-store/
+.env
+.env.local
+api.log
+
+# Prisma 本地库（dev.db 由 db:reset 生成）
+server/prisma/*.db
+server/prisma/*.db-journal
+server/prisma/*.db-wal
+server/prisma/*.db-shm
+
+*.log
+.DS_Store

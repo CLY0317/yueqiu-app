@@ -1,0 +1,47 @@
+{
+  "name": "yueqiu",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "羽球局 —— 约球 / 拼场 / 球友圈（React + Express + Prisma）",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "api": "node --watch server/src/index.js",
+    "web": "vite --config web/vite.config.js",
+    "build": "vite build --config web/vite.config.js",
+    "start": "node server/src/index.js",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "node server/prisma/seed.mjs",
+    "db:reset": "node server/prisma/seed.mjs --reset",
+    "db:use-postgres": "node scripts/db-provider.mjs postgresql",
+    "db:use-sqlite": "node scripts/db-provider.mjs sqlite",
+    "test": "node scripts/test-db.mjs && vitest run",
+    "test:watch": "vitest",
+    "smoke": "node scripts/smoke.mjs",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:pg:reset": "prisma migrate reset --force --schema server/prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.6.0",
+    "prisma": "^6.16.0",
+    "supertest": "^7.1.0",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

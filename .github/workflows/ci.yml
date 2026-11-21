@@ -1,0 +1,143 @@
+name: CI
+
+# 触发：任意分支 push、任意 PR、以及手动运行
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支连续推两次时，取消上一次还没跑完的构建
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # service container 里的 PG 与本机 docker-compose.yml 同镜像、同账号
+  DATABASE_URL: postgresql://yueqiu:yueqiu@127.0.0.1:5432/yueqiu?schema=public
+  TEST_DATABASE_URL: postgresql://yueqiu:yueqiu@127.0.0.1:5432/yueqiu_test?schema=public
+  # 仅 CI 的一次性值，不要与真实环境共用
+  JWT_SECRET: ci-only-not-a-real-secret
+  DEV_SMS: 'true'
+
+jobs:
+  # 作业一：接口测试 —— 脚本自己重建 yueqiu_test 库，不碰主库
+  test:
+    name: 接口测试（Vitest + PostgreSQL 16）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: yueqiu
+          POSTGRES_PASSWORD: yueqiu
+          POSTGRES_DB: yueqiu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yueqiu -d yueqiu"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 仓库 .npmrc 里的 store-dir=.pnpm-store 是本机用的，CI 显式换到 ~/.pnpm-store 再缓存
+      - name: 缓存 pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile --store-dir ~/.pnpm-store
+
+      - name: 生成 Prisma Client
+        run: pnpm db:generate
+
+      - name: 测试（重建 yueqiu_test → 23 个用例）
+        run: pnpm test
+
+      - name: 构建前端
+        run: pnpm build
+
+  # 作业二：冒烟 —— 在干净的主库上走「迁移 → 种子 → 起服务 → 打接口」
+  smoke:
+    name: 冒烟（迁移 + 种子 + 起服务 12 项）
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: yueqiu
+          POSTGRES_PASSWORD: yueqiu
+          POSTGRES_DB: yueqiu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yueqiu -d yueqiu"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 缓存 pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile --store-dir ~/.pnpm-store
+
+      - name: 生成 Prisma Client
+        run: pnpm db:generate
+
+      # 只应用迁移文件，不用 migrate dev（CI 不该产生新迁移）
+      - name: 应用迁移到主库
+        run: pnpm exec prisma migrate deploy --schema server/prisma/schema.prisma
+
+      - name: 灌演示数据
+        run: pnpm db:reset
+
+      - name: 启动 API 并等待就绪
+        run: |
+          node server/src/index.js > api.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8787/api/health > /dev/null; then
+              echo "API 已就绪（约 ${i}s）"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API 未在 30s 内就绪，日志如下："
+          cat api.log
+          exit 1
+
+      - name: 冒烟 12 项
+        run: pnpm smoke
+
+      - name: 失败时输出 API 日志
+        if: failure()
+        run: cat api.log
