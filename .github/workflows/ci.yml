@@ -148,6 +148,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     timeout-minutes: 25
+    env:
+      # 端到端里每个用例都要登录，关掉 60 秒短信冷却（生产默认仍是 60s）
+      SMS_COOLDOWN_MS: '0'
     services:
       postgres:
         image: postgres:16-alpine

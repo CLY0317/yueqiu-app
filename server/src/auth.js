@@ -62,8 +62,10 @@ export async function revokeRefresh(token) {
 /* ------------------------------ 短信验证码 ------------------------------ */
 
 const SMS_TTL_MS = 5 * 60_000
-const SMS_COOLDOWN_MS = 60_000
 const SMS_MAX_ATTEMPTS = 5
+
+/** 冷却默认 60s；端到端测试里置 0 以便连续登录，生产不要动 */
+const smsCooldownMs = () => Number(process.env.SMS_COOLDOWN_MS ?? SMS_TTL_MS / 5)
 
 export async function sendSmsCode(phone) {
   const last = await prisma.smsCode.findFirst({
@@ -71,7 +73,7 @@ export async function sendSmsCode(phone) {
     orderBy: { createdAt: 'desc' },
   })
   if (last) {
-    const wait = SMS_COOLDOWN_MS - (Date.now() - last.createdAt.getTime())
+    const wait = smsCooldownMs() - (Date.now() - last.createdAt.getTime())
     if (wait > 0) {
       throw new HttpError(429, 'SMS_TOO_FREQUENT', `太频繁了，${Math.ceil(wait / 1000)} 秒后再试`)
     }
