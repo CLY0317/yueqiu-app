@@ -20,6 +20,9 @@
     "test": "node scripts/test-db.mjs && vitest run",
     "test:watch": "vitest",
     "smoke": "node scripts/smoke.mjs",
+    "e2e": "playwright test",
+    "e2e:report": "playwright show-report",
+    "e2e:install": "playwright install --with-deps chromium",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:pg:reset": "prisma migrate reset --force --schema server/prisma/schema.prisma"
@@ -35,6 +38,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.1",
     "@vitejs/plugin-react": "^4.6.0",
     "prisma": "^6.16.0",
     "supertest": "^7.1.0",

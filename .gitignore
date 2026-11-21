@@ -13,3 +13,6 @@ server/prisma/*.db-shm
 
 *.log
 .DS_Store
+playwright-report/
+test-results/
+blob-report/

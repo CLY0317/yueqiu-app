@@ -143,9 +143,13 @@ pnpm db:generate && pnpm db:push && pnpm db:reset
 
 ```bash
 pnpm db:up    # 测试需要 PostgreSQL
-pnpm test     # 重建 yueqiu_test → 23 个用例
+pnpm test     # 重建 yueqiu_test → 23 个用例（接口级）
 pnpm smoke    # 对着已经跑起来的服务体检 12 项
+pnpm e2e      # Playwright 端到端（需要先 build + 起服务 + 灌种子）
 ```
+
+端到端要跑在生产构建上：先 `pnpm db:reset`、`pnpm build`、`pnpm start`，另开一个终端 `pnpm e2e`。
+首次需要装浏览器：`pnpm e2e:install`（Chromium + 系统依赖）。用例覆盖登录、球局详情、以及「报名 → 生成 AA 订单 → 支付成功」这条付费闭环。
 
 覆盖：验证码冷却/过期/错误、登录与 refresh 轮换重放、时段查表、锁场、重复预订 409、报名并发（ALREADY_JOINED / VERSION_CONFLICT）、
 支付与重复支付、退出退款、解散退款并释放场地、非发起人不能解散、动态与空内容校验、评论计数与通知、点赞幂等、通知已读、我的统计与订单。
@@ -158,6 +162,7 @@ pnpm smoke    # 对着已经跑起来的服务体检 12 项
 | --- | --- |
 | `test` | `pnpm install --frozen-lockfile` → `prisma generate` → `pnpm test`（脚本先 `migrate reset` 重建 `yueqiu_test`，再跑 23 个用例）→ `pnpm build` |
 | `smoke` | 对主库 `prisma migrate deploy` → `pnpm db:reset` 灌种子 → 后台起 API 并轮询 `/api/health` → `pnpm smoke` 12 项（失败时打印 API 日志） |
+| `e2e` | 迁移 + 种子 → `pnpm build` → 装 Chromium → 起 API → `pnpm e2e` 三个 Playwright 用例（登录 / 详情 / 报名支付闭环） |
 
 触发：任意分支 push、任意 PR、手动 `workflow_dispatch`；同一分支的新提交会取消上一次未完成的构建。
 
