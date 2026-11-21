@@ -18,7 +18,15 @@ import { HttpError } from './util.js'
 export function createApp() {
   const app = express()
   app.use(cors())
-  app.use(express.json({ limit: '256kb' }))
+  app.use(
+    express.json({
+      limit: '256kb',
+      // 微信支付回调要用未解析的原始报文验签，这里留一份
+      verify: (req, _res, buf) => {
+        req.rawBody = buf
+      },
+    }),
+  )
 
   const api = express.Router()
 

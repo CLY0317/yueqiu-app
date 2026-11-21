@@ -8,6 +8,7 @@ export default function GameSheet({ initial, onChanged }) {
   const [game, setGame] = useState(initial)
   const [busy, setBusy] = useState(false)
   const [paying, setPaying] = useState(false)
+  const [codeUrl, setCodeUrl] = useState('')
   const sheet = useSheet()
   const toast = useToast()
 
@@ -40,6 +41,12 @@ export default function GameSheet({ initial, onChanged }) {
     setPaying(true)
     try {
       const res = await api.post(`/orders/${game.myOrder.id}/pay`)
+      // 真实渠道（微信）返回 code_url：等回调确认，这里只把二维码链接摆出来
+      if (res.codeUrl) {
+        setCodeUrl(res.codeUrl)
+        toast.show('请用微信扫码支付，完成后刷新查看状态')
+        return
+      }
       // 支付后刷新整局，顺便更新"已支付 N 人"
       const fresh = await api.get(`/games/${game.id}`)
       setGame(fresh.game)
@@ -153,6 +160,16 @@ export default function GameSheet({ initial, onChanged }) {
                 {paying ? '支付中…' : '去支付'}
               </button>
             )}
+          </div>
+        )}
+
+        {codeUrl && (
+          <div className="paybox" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
+            <span>微信扫码支付</span>
+            <a href={codeUrl} target="_blank" rel="noreferrer" style={{ wordBreak: 'break-all', fontSize: 12 }}>
+              {codeUrl}
+            </a>
+            <span style={{ fontSize: 12, opacity: 0.7 }}>支付完成后重新打开这一局即可看到「已支付」</span>
           </div>
         )}
 

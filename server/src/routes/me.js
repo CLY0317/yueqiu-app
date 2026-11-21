@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { prisma } from '../db.js'
 import { requireAuth } from '../auth.js'
+import { config } from '../env.js'
+import { createPaymentChannel } from '../channels/payment.js'
 import { gameDTO, notificationDTO, orderDTO, userDTO } from '../dto.js'
 import { gameInclude } from './games.js'
 import { notify } from '../notify.js'
@@ -84,7 +86,29 @@ router.get('/me/orders', requireAuth, async (req, res, next) => {
   }
 })
 
-/** 模拟支付网关：真实项目这里应该创建支付单并等回调 */
+/** 把订单置为已支付并推通知（dev 渠道与微信回调共用） */
+async function markOrderPaid(order) {
+  await prisma.order.update({
+    where: { id: order.id },
+    data: { status: 'paid', paidAt: new Date() },
+  })
+  await notify(order.userId, {
+    type: 'payment',
+    title: '支付成功',
+    body: `${order.game?.title || '球局'} · 已支付 ¥${order.amount}`,
+    refId: order.gameId,
+  })
+  return prisma.order.findUnique({
+    where: { id: order.id },
+    include: { game: { include: { venue: true } } },
+  })
+}
+
+/**
+ * 发起支付：
+ * - dev 渠道直接置为已支付（模拟网关）
+ * - wechat 渠道走 Native 下单，返回 code_url 给前端出二维码，真正的状态变更等回调
+ */
 router.post('/orders/:id/pay', requireAuth, async (req, res, next) => {
   try {
     const order = await prisma.order.findUnique({
@@ -97,25 +121,62 @@ router.post('/orders/:id/pay', requireAuth, async (req, res, next) => {
     if (order.status === 'refunded') throw conflict('ORDER_REFUNDED', '订单已退款')
     if (order.game.status !== 'open') throw conflict('GAME_CLOSED', '球局已解散，无需支付')
 
-    await prisma.order.update({
-      where: { id: order.id },
-      data: { status: 'paid', paidAt: new Date() },
-    })
+    const channel = createPaymentChannel()
 
-    await notify(req.user.id, {
-      type: 'payment',
-      title: '支付成功',
-      body: `${order.game.title} · 已支付 ¥${order.amount}`,
-      refId: order.game.id,
-    })
+    if (channel.name !== 'dev') {
+      const { codeUrl } = await channel.createOrder({
+        orderId: order.id,
+        description: `${order.game.title} · AA 场地费`,
+        amountFen: order.amount * 100,
+        notifyUrl: `${config.publicBaseUrl}/api/pay/wechat/notify`,
+      })
+      const fresh = await prisma.order.findUnique({
+        where: { id: order.id },
+        include: { game: { include: { venue: true } } },
+      })
+      return res.json({ order: orderDTO(fresh), codeUrl })
+    }
 
-    const fresh = await prisma.order.findUnique({
-      where: { id: order.id },
-      include: { game: { include: { venue: true } } },
-    })
-    res.json({ order: orderDTO(fresh) })
+    res.json({ order: orderDTO(await markOrderPaid(order)) })
   } catch (err) {
     next(err)
+  }
+})
+
+/**
+ * 微信支付回调（公开路由，靠签名而不是登录态鉴权）。
+ * 幂等：同一笔订单收到多次通知只生效一次；验签失败回 401，微信会重试。
+ */
+router.post('/pay/wechat/notify', async (req, res) => {
+  try {
+    const channel = createPaymentChannel()
+    if (channel.name !== 'wechat') {
+      return res.status(400).json({ code: 'FAIL', message: '未启用微信支付' })
+    }
+
+    const rawBody = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body)
+    const info = await channel.parseNotify({ headers: req.headers, rawBody })
+
+    if (info.tradeState !== 'SUCCESS') {
+      return res.json({ code: 'SUCCESS', message: '非成功状态，已忽略' })
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: info.outTradeNo },
+      include: { game: true },
+    })
+    if (!order) return res.status(404).json({ code: 'FAIL', message: '订单不存在' })
+    if (order.amount * 100 !== info.totalFen) {
+      return res.status(400).json({ code: 'FAIL', message: '金额与订单不一致' })
+    }
+    if (order.status === 'paid') {
+      return res.json({ code: 'SUCCESS', message: '重复通知，幂等返回' })
+    }
+
+    await markOrderPaid(order)
+    res.json({ code: 'SUCCESS' })
+  } catch (err) {
+    res.status(401).json({ code: 'FAIL', message: err.message })
   }
 })
 

@@ -22,4 +22,6 @@ export const config = {
   refreshDays: Number(process.env.REFRESH_TOKEN_DAYS || 30),
   devSms: process.env.DEV_SMS === 'true',
   isTest: process.env.NODE_ENV === 'test',
+  // 支付回调需要外部可达的地址；本地开发可用内网穿透
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL || `http://127.0.0.1:${process.env.PORT || 8787}`).replace(/\/$/, ''),
 }

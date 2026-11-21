@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import jwt from 'jsonwebtoken'
 import { config } from './env.js'
 import { prisma } from './db.js'
+import { createSmsChannel } from './channels/sms.js'
 import { HttpError } from './util.js'
 
 /* ------------------------------ 访问令牌 ------------------------------ */
@@ -81,9 +82,10 @@ export async function sendSmsCode(phone) {
     data: { phone, code, expiresAt: new Date(Date.now() + SMS_TTL_MS) },
   })
 
-  // 演示环境不接短信网关，直接把验证码回给前端；生产置 DEV_SMS=false 并接真实网关
-  console.log(`[sms] ${phone} -> ${code}`)
-  return config.devSms ? code : null
+  // dev 渠道把验证码回给前端；真实渠道（如阿里云）绝不回显
+  const channel = createSmsChannel()
+  await channel.send(phone, code)
+  return channel.name === 'dev' ? code : null
 }
 
 export async function verifySmsCode(phone, code) {

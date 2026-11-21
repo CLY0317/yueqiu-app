@@ -114,7 +114,8 @@ refresh 每次使用都会**轮换并作废旧令牌**，重放旧 refresh 直�
 | GET | `/api/me` | ✓ | 资料 + 场次/支出/球友/待支付 |
 | GET | `/api/me/games?role=` | ✓ | 我发起的 / 我报名的 |
 | GET | `/api/me/orders` | ✓ | 我的 AA 订单 |
-| POST | `/api/orders/:id/pay` | ✓ | 模拟支付 |
+| POST | `/api/orders/:id/pay` | ✓ | 发起支付（dev 直接置已付；wechat 返回 `codeUrl`） |
+| POST | `/api/pay/wechat/notify` | 签名 | 微信支付回调（验签 + 解密 + 幂等） |
 | GET | `/api/notifications` | ✓ | 通知 + 未读数 |
 | POST | `/api/notifications/read` | ✓ | 标记已读 |
 
@@ -176,11 +177,27 @@ pnpm e2e      # Playwright 端到端（需要先 build + 起服务 + 灌种子�
 
 不需要配置任何 Secret——数据库账号是每次构建里的一次性容器。
 
+## 短信与支付渠道
+
+两者都做成「环境变量切换的适配器」，默认 `dev`，所以本地和 CI 的行为与之前完全一样。
+
+**短信**（`SMS_PROVIDER`）：
+
+- `dev`：验证码打日志并随接口回显，前端自动填入。
+- `aliyun`：阿里云 dysmsapi，RPC 风格签名（`GET&%2F&规范化参数串`，HMAC-SHA1）；需要 `ALIYUN_SMS_ACCESS_KEY_ID/SECRET`、`SIGN_NAME`、`TEMPLATE_CODE`。选了但没配齐会在构造渠道时就抛错，不会等到发短信才静默失败。
+
+**支付**（`PAY_PROVIDER`）：
+
+- `dev`：调用即置为已支付（模拟网关）。
+- `wechat`：微信支付 APIv3 `Native` 下单，返回 `code_url` 给前端展示；订单状态由回调驱动——`POST /api/pay/wechat/notify` 用平台证书公钥验签（`RSA-SHA256`，待签串 `时间戳\n随机串\n原始报文\n`），再用 APIv3 密钥 `AES-256-GCM` 解密资源，最后按 `out_trade_no` 幂等置为已支付，金额不一致直接拒绝。
+
+关于「沙箱」：微信支付 APIv3 **没有公开沙箱环境**（旧版 v2 沙箱已下线），只能用真实商户号做小额支付。所以这里的实现是「可对接真实商户的参数化适配」，验证分两层：签名与解密用 7 个纯函数单测覆盖（`tests/channels.test.js`），接口层走 dev 渠道。真正联调还需要：商户号、APIv3 密钥、平台证书，以及一个外部可达的 `PUBLIC_BASE_URL`。
+
 ## 没有做的（下一批）
 
-- 真实短信网关与支付渠道（现在都是模拟，接口形状已经留好）
+- 短信与支付渠道已实现适配器（阿里云 / 微信 APIv3），但**没有真实商户号和网关可联调**；签名与解密有单测，回调链路只有 dev 渠道在跑
 - 地图/LBS 与按距离排序、图片上传、分页、WebSocket 推送
-- Playwright 端到端（目前是 Vitest 接口级 + 手动点测）
+- 支付回调落库前的对账（现在只校验金额，没有下载对账单）
 
 ## 环境备注
 
