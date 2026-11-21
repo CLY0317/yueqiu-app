@@ -1,5 +1,7 @@
 # 羽球局 · 约球 App（React + Express + Prisma + PostgreSQL）
 
+[![CI](https://github.com/CLY0317/yueqiu-app/actions/workflows/ci.yml/badge.svg)](https://github.com/CLY0317/yueqiu-app/actions/workflows/ci.yml)
+
 一个「约球 / 拼场 / 球友圈」的羽毛球约局应用，交互参考闪动。
 v2 把 v1 的本地演示版升级成了**有真实账号体系、能订场、能收钱、有通知**、数据落在 **PostgreSQL** 上的完整工程。
 
