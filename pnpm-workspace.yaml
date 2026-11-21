@@ -1,7 +1,10 @@
 nodeLinker: hoisted
 storeDir: .pnpm-store
-onlyBuiltDependencies:
-  - esbuild
-  - prisma
-  - '@prisma/client'
-  - '@prisma/engines'
+# pnpm 11 用 allowBuilds 决定哪些依赖可以执行安装脚本；
+# 旧键 onlyBuiltDependencies 在 pnpm 11 里已不再生效（会被静默忽略）。
+# 这几个包必须允许：prisma/@prisma/* 生成 Client 与引擎，esbuild 装平台二进制。
+allowBuilds:
+  esbuild: true
+  prisma: true
+  '@prisma/client': true
+  '@prisma/engines': true

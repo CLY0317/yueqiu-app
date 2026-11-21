@@ -177,7 +177,8 @@ pnpm smoke    # 对着已经跑起来的服务体检 12 项
 
 ## 环境备注
 
-- Node ≥ 20（开发用 Node 24）；`pnpm-workspace.yaml` 里设了 `nodeLinker: hoisted` 与 `onlyBuiltDependencies`（Windows 下必需）。
+- Node ≥ 20（开发用 Node 24）；包管理器用 **pnpm 11**（CI 里固定 `version: 11`）。
+- `pnpm-workspace.yaml` 里设了 `nodeLinker: hoisted` 与 `allowBuilds`。注意 **pnpm 11 已改用 `allowBuilds`**（`包名: true` 的映射），旧的 `onlyBuiltDependencies` 会被静默忽略——而 pnpm 11 把"未批准的构建脚本"当作**硬错误**（`ERR_PNPM_IGNORED_BUILDS`，exit 1），所以 `prisma`/`@prisma/client`/`@prisma/engines`/`esbuild` 必须在白名单里，否则 `pnpm install` 直接失败。这张白名单是 `pnpm approve-builds <包名>` 写出来的，不要手改回旧键。
 - `.env` 里的 `JWT_SECRET`、`DEV_SMS` 只能用于本地；上线前必须换成随机值并关掉 `DEV_SMS`。
 - **如果 Docker Hub 拉不动**（国内常见），可以走镜像站再打回标准 tag：
 
