@@ -46,7 +46,8 @@ COPY --from=builder /app/package.json ./
 
 # 非 root 运行
 RUN useradd --system --create-home --uid 10001 yueqiu \
-  && chown -R yueqiu:yueqiu /app
+  && mkdir -p /backups /app/logs \
+  && chown -R yueqiu:yueqiu /app /backups
 USER yueqiu
 
 EXPOSE 8787
