@@ -150,7 +150,19 @@ pnpm e2e      # Playwright 端到端（需要先 build + 起服务 + 灌种子�
 ```
 
 端到端要跑在生产构建上：先 `pnpm db:reset`、`pnpm build`、`pnpm start`，另开一个终端 `pnpm e2e`。
-首次需要装浏览器：`pnpm e2e:install`（Chromium + 系统依赖）。用例覆盖登录、球局详情、以及「报名 → 生成 AA 订单 → 支付成功」这条付费闭环。
+首次需要装浏览器：`pnpm e2e:install`（Chromium + 系统依赖）。
+
+6 个用例覆盖三条主线：
+
+| 文件 | 用例 |
+| --- | --- |
+| `e2e/app.spec.js` | 登录、球局详情、「报名 → 生成 AA 订单 → 支付成功」付费闭环 |
+| `e2e/flows.spec.js` | **发局**（填表单 + 订空闲时段 → 发布 → 大厅出现「我发起的」）、**评论**（发动态 → 评论 → 计数 +1）、**解散退款**（发起人解散 → 队友订单转「已退款」+ 收到解散通知） |
+
+两个约定，改动前先读 `e2e/helpers.js`：
+
+- **手机号每次运行都不同**。固定号码会被上一轮留下的状态污染（该账号已报名过、订单已付过），用例就不再可重复运行；撞上 60 秒短信冷却还会直接 429。号码必须正好 11 位——登录框有 `maxLength={11}`，多一位会被静默截断（序号位被砍掉，所有用例拿到同一个号）。
+- **订场用例走 API 找空位**（`findFreeSlot`），不直接点 UI：发局表单默认选第一个场馆，反复跑测试会把它当天时段订满，那时 UI 上一个可选时段都没有。
 
 覆盖：验证码冷却/过期/错误、登录与 refresh 轮换重放、时段查表、锁场、重复预订 409、报名并发（ALREADY_JOINED / VERSION_CONFLICT）、
 支付与重复支付、退出退款、解散退款并释放场地、非发起人不能解散、动态与空内容校验、评论计数与通知、点赞幂等、通知已读、我的统计与订单。
@@ -163,7 +175,7 @@ pnpm e2e      # Playwright 端到端（需要先 build + 起服务 + 灌种子�
 | --- | --- |
 | `test` | `pnpm install --frozen-lockfile` → `prisma generate` → `pnpm test`（脚本先 `migrate reset` 重建 `yueqiu_test`，再跑 23 个用例）→ `pnpm build` |
 | `smoke` | 对主库 `prisma migrate deploy` → `pnpm db:reset` 灌种子 → 后台起 API 并轮询 `/api/health` → `pnpm smoke` 12 项（失败时打印 API 日志） |
-| `e2e` | 迁移 + 种子 → `pnpm build` → 装 Chromium → 起 API → `pnpm e2e` 三个 Playwright 用例（登录 / 详情 / 报名支付闭环） |
+| `e2e` | 迁移 + 种子 → `pnpm build` → 装 Chromium → 起 API → `pnpm e2e` 六个 Playwright 用例（登录 / 详情 / 付费闭环 / 发局 / 评论 / 解散退款） |
 
 触发：任意分支 push、任意 PR、手动 `workflow_dispatch`；同一分支的新提交会取消上一次未完成的构建。
 
