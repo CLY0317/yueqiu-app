@@ -94,6 +94,11 @@ if [ "$HEALTHY" -ne 1 ]; then
   exit 1
 fi
 
+# ---------- 7.5 启动反向代理 ----------
+# 注意：上面只 --no-deps 起了 app，caddy 必须单独起（它依赖 app healthy）
+log "启动反向代理 Caddy…"
+dc up -d caddy || warn "Caddy 启动失败（应用本身仍在跑，只是没有对外入口）"
+
 # ---------- 8. 顺手起一下运维侧车 ----------
 if [ "${ENABLE_OPS:-1}" = "1" ]; then
   log "启动运维侧车（巡检 + 备份）…"
