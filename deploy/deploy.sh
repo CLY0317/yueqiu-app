@@ -51,6 +51,11 @@ dc build --build-arg VERSION="$NEW_VERSION" app \
   || die "镜像构建失败"
 docker tag "yueqiu-app:${YUEQIU_VERSION:-latest}" "yueqiu-app:$NEW_VERSION" 2>/dev/null || true
 
+# ---------- 3.5 先把数据库容器拉起来 ----------
+# 迁移要连库，而首次部署时数据库还没起 —— 必须先 up 并等它 healthy
+log "启动数据库容器…"
+dc up -d --wait postgres || die "数据库容器启动失败"
+
 # ---------- 4. 应用迁移 ----------
 log "应用数据库迁移…"
 dc run --rm --no-deps app node node_modules/prisma/build/index.js migrate deploy --schema server/prisma/schema.prisma \
