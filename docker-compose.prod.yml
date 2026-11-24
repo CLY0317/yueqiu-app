@@ -119,6 +119,9 @@ services:
       WATCHDOG_FAIL_THRESHOLD: ${WATCHDOG_FAIL_THRESHOLD:-3}
       ALERT_WEBHOOK: ${ALERT_WEBHOOK:-}
     command: ['node', 'scripts/watchdog.mjs']
+    # 侧车不监听 HTTP，沿用镜像里的 HEALTHCHECK 会一直判不健康
+    healthcheck:
+      disable: true
     volumes:
       - watchlog:/app/logs
 
@@ -141,6 +144,8 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB:-yueqiu}
     command: ['sh', '-c', 'while true; do node scripts/backup.mjs; sleep ${BACKUP_INTERVAL_SECONDS:-86400}; done']
+    healthcheck:
+      disable: true
     volumes:
       - backups:/backups
 

@@ -6,7 +6,8 @@
 #   - 访问日志用 JSON 格式，方便采集。
 
 {
-	email {$ACME_EMAIL}
+	# ACME_EMAIL 为空时给个占位：写成 email {$ACME_EMAIL} 会在空值时让 Caddy 解析失败
+	email {$ACME_EMAIL:admin@example.com}
 	# 生产环境建议关掉 admin API（默认只监听 localhost，无所谓）
 }
 
