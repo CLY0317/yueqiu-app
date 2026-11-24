@@ -89,7 +89,8 @@ services:
     environment:
       # 有域名就用域名（Caddy 自动 HTTPS）；只有 IP 就写 http://IP（明文）
       SITE_ADDRESS: ${SITE_ADDRESS:?必须设置，例如 yueqiu.example.com 或 http://1.2.3.4}
-      ACME_EMAIL: ${ACME_EMAIL:-}
+      # 必须是真值：Caddyfile 里写 email {$ACME_EMAIL} 时，空字符串会导致解析失败整个起不来
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
     ports:
       - '80:80'
       - '443:443'
