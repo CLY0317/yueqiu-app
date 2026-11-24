@@ -146,6 +146,9 @@ model Post {
 
   likes    PostLike[]
   comments Comment[]
+
+  // 球友圈按发布时间倒序取最新若干条，缺这个索引会全表扫
+  @@index([createdAt])
 }
 
 model PostLike {
@@ -156,6 +159,8 @@ model PostLike {
   createdAt DateTime @default(now())
 
   @@id([postId, userId])
+  // 统计每条动态的点赞数要按 postId 过滤
+  @@index([postId])
 }
 
 model Comment {

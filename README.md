@@ -239,16 +239,99 @@ DEV_SMS=false
 
 缺任何一项，进程会拒绝启动并打印具体缺什么。
 
+## 部署与运维
+
+### 一台服务器上跑起来（域名 + 自动 HTTPS）
+
+```bash
+cp .env.production.example deploy/.env.production   # 填域名、密码、JWT 密钥、短信渠道
+./deploy/deploy.sh                                   # 部署（会自动备份 → 迁移 → 健康检查）
+```
+
+`deploy.sh` 的顺序是刻意安排的：
+
+1. 记录当前版本（`deploy/.last-version`）——这就是回滚目标
+2. **先备份数据库**（备份失败会警告但不阻断，你自己判断）
+3. 构建新版本镜像
+4. 应用数据库迁移
+5. 切换版本并重启
+6. **健康检查**（默认最多 12 次 × 5 秒）
+7. 不健康 → **自动回滚**到第 1 步记下的版本，并把日志打出来
+
+`docker-compose.prod.yml` 里四个服务：
+
+| 服务 | 作用 |
+| --- | --- |
+| `app` | 应用本体（非 root 运行，带健康检查，日志轮转 20MB × 5） |
+| `postgres` | PG 16，**不把 5432 暴露到公网**，数据在命名卷 `pgdata` |
+| `caddy` | 反向代理 + **自动签发/续期 HTTPS 证书**（Let's Encrypt），只把 80/443 对外 |
+| `watchdog` / `backup` | 运维侧车，`--profile ops` 才起：健康巡检 + 定时备份 |
+
+数据卷、备份目录都在卷里，**不放安装目录**——Docker Desktop 卸载会清空安装目录（备份放那儿被清掉过一次）。
+
+### 备份与恢复演练
+
+```bash
+pnpm backup          # 做一次备份（压缩 + 校验 + 写清单 + 按保留策略清理）
+pnpm backup:list     # 看有哪些备份
+pnpm backup:drill    # 演练：备份 → 真的 drop schema → 恢复 → 核对行数
+pnpm restore         # 用最新备份恢复
+```
+
+每份备份产出一个 `.dump.gz` 和一个同名 `.json` 清单（大小、sha256、各表行数）。
+**备份完立刻用 `pg_restore --list` 验一遍**——读不出目录的备份等于没有备份。
+恢复后会拿清单里的行数做核对，对不上直接报错（恢复成功 ≠ 恢复正确）。
+
+保留策略默认留 14 个日备 + 8 个周备（每周第一个）。
+异地备份用 `BACKUP_UPLOAD_CMD` 挂一个推送命令（rsync / rclone / s3 cp 都行），本机有备份不算数。
+
+### 健康巡检与告警
+
+```bash
+pnpm watchdog:once   # 查一次（部署脚本用这个判健康）
+pnpm watchdog        # 常驻巡检
+```
+
+连续失败 N 次（默认 3）才告警，避免抖动误报；恢复时再发一条「已恢复」。
+告警通道配一个就行：
+
+```bash
+ALERT_WEBHOOK=dingtalk:https://oapi.dingtalk.com/robot/send?access_token=xxx
+ALERT_WEBHOOK=wecom:https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
+ALERT_WEBHOOK=url:https://example.com/hook     # 自定义，POST {text}
+```
+
+### 回滚
+
+```bash
+./deploy/rollback.sh          # 回到上一次部署的版本
+./deploy/rollback.sh v2.0.0   # 回到指定版本
+```
+
+### 日志
+
+服务端用 **pino** 输出结构化 JSON（`docker compose logs` 直接可读，采集器也能吃）：
+方法、路径、状态码、耗时、IP、用户 id。手机号、验证码、token 一律不落日志（`logger.js` 里有 redact 规则）。
+生产用 `LOG_LEVEL=info`，测试环境自动静默。
+
+### 镜像构建
+
+```bash
+docker build -t yueqiu-app:latest .
+# 国内拉不动 Docker Hub 时：
+docker pull docker.m.daocloud.io/library/node:22-bookworm-slim
+docker tag docker.m.daocloud.io/library/node:22-bookworm-slim node:22-bookworm-slim
+docker build --build-arg NODE_IMAGE=docker.m.daocloud.io/library/node:22-bookworm-slim -t yueqiu-app:latest .
+```
+
 ## 没有做的（下一批）
 
-- 真实商户/网关联调（支付回调、短信到达率）、支付对账与退款回执
-- **HTTPS + 反向代理 + 域名 + ICP 备案**、部署与回滚流程
-- **数据库定时备份与恢复演练**（目前只有一个 docker volume）
-- **日志聚合与告警**（现在只有 console.log，无错误上报）
-- **内容审核与举报入口**（球友圈是 UGC，现在没有任何过滤）
-- 隐私政策与用户协议
-- 地图/LBS 与按距离排序、图片上传、列表分页、WebSocket 推送
-- 给 `Post` / `PostLike` 补索引（这两张表现还没有任何索引）
+- **真实短信/支付资质**：阿里云短信签名与模板审核（**要 1–2 周，最早启动**）、微信支付商户号
+- **内容审核与举报入口**（球友圈是 UGC，现在零过滤）
+- **隐私政策与用户协议**、ICP 备案
+- **列表分页**（`feed` 现在固定取 50 条，游标分页没做）
+- 地图/LBS 与按距离排序、图片上传、WebSocket 推送
+- 部署到真实的云服务器（本仓库只提供了编排与脚本，没替你选厂商、没配服务器）
 
 ## 环境备注
 

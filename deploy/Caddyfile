@@ -1,0 +1,37 @@
+# Caddy：自动签发并续期 HTTPS 证书（Let's Encrypt）。
+#
+# 关键点：
+#   - Caddy 会自动申请证书，只要域名解析到这台机器、80/443 端口可达即可；
+#   - 反代到 compose 内的 app:8787（只在本机网络里，不直接对外）；
+#   - 访问日志用 JSON 格式，方便采集。
+
+{
+	email {$ACME_EMAIL}
+	# 生产环境建议关掉 admin API（默认只监听 localhost，无所谓）
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# 安全响应头（应用侧也有一份，这里是反向代理层的兜底）
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# 真实客户端 IP：应用侧的限流要靠它（compose 里已设 TRUST_PROXY=true）
+	reverse_proxy app:8787 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+
+	# 证书申请走 80 端口的 ACME 挑战，不要给 challenge 路径加额外策略
+}

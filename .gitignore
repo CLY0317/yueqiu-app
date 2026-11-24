@@ -16,3 +16,6 @@ server/prisma/*.db-shm
 playwright-report/
 test-results/
 blob-report/
+logs/
+backups/db/
+deploy/.env.production

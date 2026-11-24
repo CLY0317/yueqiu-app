@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 
 import { prisma } from './db.js'
+import { logger } from './logger.js'
 import authRoutes from './routes/auth.js'
 import venueRoutes from './routes/venues.js'
 import gameRoutes from './routes/games.js'
@@ -20,6 +21,27 @@ import { HttpError } from './util.js'
 export function createApp() {
   const app = express()
   if (config.trustProxy) app.set('trust proxy', 1)
+
+  // 请求日志：方法 / 路径 / 状态 / 耗时 / 用户。
+  // 健康检查走 debug 级，避免把正常流量刷满。
+  app.use((req, res, next) => {
+    const started = process.hrtime.bigint()
+    res.on('finish', () => {
+      const ms = Number(process.hrtime.bigint() - started) / 1e6
+      const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info'
+      const line = {
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        durationMs: Math.round(ms * 10) / 10,
+        ip: req.ip,
+        userId: req.user?.id || null,
+      }
+      if (req.path === '/api/health') logger.debug(line, 'health')
+      else logger[level](line, 'http')
+    })
+    next()
+  })
 
   // 安全响应头：CSP / HSTS / X-Content-Type-Options / Referrer-Policy 等
   app.use(
@@ -109,7 +131,7 @@ export function createApp() {
   if (fs.existsSync(dist)) {
     app.use(express.static(dist))
     app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')))
-    console.log('[web] 已托管静态站点：', dist)
+    logger.info({ dist }, '已托管前端静态站点')
   }
 
   // 统一错误出口：zod / prisma / HttpError 都转成 { error: { code, message, field } }
@@ -140,7 +162,14 @@ export function createApp() {
     }
 
     const status = err instanceof HttpError ? err.status : 500
-    if (status >= 500) console.error('[api]', err)
+    if (status >= 500) {
+      logger.error(
+        { err: { message: err.message, stack: err.stack, code: err.code }, path: _req.path },
+        'api error',
+      )
+    } else {
+      logger.warn({ code: err.code, message: err.message, path: _req.path }, 'api reject')
+    }
     res.status(status).json({
       error: {
         code: err.code || 'INTERNAL_ERROR',
@@ -165,19 +194,32 @@ if (isMain) {
     process.exit(1)
   }
 
-  const app = createApp()
-  const server = app.listen(config.port, () => {
-    console.log(`[api] 羽球局 API： http://127.0.0.1:${config.port}/api/health`)
-    if (config.devSms) console.log('[api] DEV_SMS=true：验证码会直接返回给前端（仅演示用）')
+  // 崩溃兜底：先落日志再退出，别让异常静默吞掉
+  process.on('uncaughtException', (err) => {
+    logger.fatal({ err: { message: err.message, stack: err.stack } }, 'uncaught exception')
+    process.exit(1)
+  })
+  process.on('unhandledRejection', (reason) => {
+    logger.fatal({ err: { message: String(reason), stack: reason?.stack } }, 'unhandled rejection')
   })
 
-  const shutdown = async () => {
+  const app = createApp()
+  const server = app.listen(config.port, () => {
+    logger.info(
+      { port: config.port, dist: fs.existsSync(path.join(ROOT, 'web', 'dist')) },
+      '羽球局 API 已启动',
+    )
+    if (config.devSms) logger.warn('DEV_SMS=true：验证码会直接返回给前端（仅演示用）')
+  })
+
+  const shutdown = async (signal) => {
+    logger.info({ signal }, '收到退出信号，开始优雅关闭')
     server.close()
     await prisma.$disconnect()
     process.exit(0)
   }
-  process.on('SIGINT', shutdown)
-  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
 }
 
 // 便于测试直接拿到 fileURL

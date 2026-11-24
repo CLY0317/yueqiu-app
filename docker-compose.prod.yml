@@ -1,0 +1,151 @@
+# 生产编排：应用 + PostgreSQL + Caddy（自动 HTTPS）+ 运维侧车（巡检 / 备份）
+#
+#   cp .env.production.example deploy/.env.production   # 改里面的值
+#   docker compose -f docker-compose.prod.yml --env-file deploy/.env.production up -d
+#
+# 说明：
+#   - 数据卷不放安装目录，避免"卸载会连备份一起清掉"那种事故；
+#   - app 用版本号标签（YUEQIU_VERSION），回滚就是把标签改回去；
+#   - ops 侧车（巡检 + 备份）用 --profile ops 才会起。
+
+name: yueqiu
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-yueqiu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?必须设置}
+      POSTGRES_DB: ${POSTGRES_DB:-yueqiu}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-yueqiu} -d ${POSTGRES_DB:-yueqiu}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # 不把 5432 暴露到公网，只有应用容器能连
+    expose:
+      - '5432'
+
+  app:
+    image: yueqiu-app:${YUEQIU_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: '8787'
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yueqiu}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-yueqiu}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?必须设置}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-900}
+      REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-30}
+      # 短信与支付渠道
+      SMS_PROVIDER: ${SMS_PROVIDER:?必须设置}
+      ALLOW_DEV_SMS: 'false'
+      DEV_SMS: 'false'
+      ALIYUN_SMS_ACCESS_KEY_ID: ${ALIYUN_SMS_ACCESS_KEY_ID:-}
+      ALIYUN_SMS_ACCESS_KEY_SECRET: ${ALIYUN_SMS_ACCESS_KEY_SECRET:-}
+      ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME:-}
+      ALIYUN_SMS_TEMPLATE_CODE: ${ALIYUN_SMS_TEMPLATE_CODE:-}
+      PAY_PROVIDER: ${PAY_PROVIDER:-dev}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      WECHAT_APPID: ${WECHAT_APPID:-}
+      WECHAT_MCHID: ${WECHAT_MCHID:-}
+      WECHAT_CERT_SERIAL_NO: ${WECHAT_CERT_SERIAL_NO:-}
+      WECHAT_PRIVATE_KEY_PEM: ${WECHAT_PRIVATE_KEY_PEM:-}
+      WECHAT_API_V3_KEY: ${WECHAT_API_V3_KEY:-}
+      WECHAT_PLATFORM_PUBLIC_KEY_PEM: ${WECHAT_PLATFORM_PUBLIC_KEY_PEM:-}
+      # CORS：只放行自己的域名
+      CORS_ORIGINS: ${CORS_ORIGINS:?必须设置}
+      TRUST_PROXY: 'true'
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    expose:
+      - '8787'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8787/api/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?必须设置，例如 yueqiu.example.com}
+      EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
+
+  # ---------- 运维侧车（--profile ops） ----------
+
+  watchdog:
+    image: yueqiu-app:${YUEQIU_VERSION:-latest}
+    profiles: ['ops']
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      HEALTH_URL: http://app:8787/api/health
+      WATCHDOG_INTERVAL_MS: ${WATCHDOG_INTERVAL_MS:-30000}
+      WATCHDOG_FAIL_THRESHOLD: ${WATCHDOG_FAIL_THRESHOLD:-3}
+      ALERT_WEBHOOK: ${ALERT_WEBHOOK:-}
+    command: ['node', 'scripts/watchdog.mjs']
+    volumes:
+      - watchlog:/app/logs
+
+  backup:
+    image: yueqiu-app:${YUEQIU_VERSION:-latest}
+    profiles: ['ops']
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yueqiu}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-yueqiu}?schema=public
+      PG_CONTAINER: none
+      BACKUP_DIR: /backups
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-14}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-8}
+      BACKUP_UPLOAD_CMD: ${BACKUP_UPLOAD_CMD:-}
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-yueqiu}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-yueqiu}
+    command: ['sh', '-c', 'while true; do node scripts/backup.mjs; sleep ${BACKUP_INTERVAL_SECONDS:-86400}; done']
+    volumes:
+      - backups:/backups
+
+volumes:
+  pgdata:
+  caddydata:
+  caddyconfig:
+  backups:
+  watchlog:
