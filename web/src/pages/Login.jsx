@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { useAuth, useToast } from '../state.jsx'
 import { Shuttle } from '../ui.jsx'
+import { DEMO_MODE } from '../demo.js'
 
 export default function Login() {
   const { login } = useAuth()
   const toast = useToast()
 
-  const [phone, setPhone] = useState('13800000000')
+  const [phone, setPhone] = useState(DEMO_MODE ? '13800000000' : '')
   const [code, setCode] = useState('')
   const [devCode, setDevCode] = useState('')
   const [countdown, setCountdown] = useState(0)
@@ -97,7 +98,7 @@ export default function Login() {
           </div>
         </div>
 
-        {devCode && (
+        {devCode && DEMO_MODE && (
           <p className="login-hint">
             演示环境不接短信网关，验证码是 <b>{devCode}</b>（已自动填入）
           </p>
@@ -109,9 +110,11 @@ export default function Login() {
         </button>
       </form>
 
-      <p className="login-foot">
-        演示账号：<b>13800000000</b>（林小羽）· 已报名一局、有一笔待支付
-      </p>
+      {DEMO_MODE && (
+        <p className="login-foot">
+          演示账号：<b>13800000000</b>（林小羽）· 已报名一局、有一笔待支付
+        </p>
+      )}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { useAuth, useSheet, useToast } from '../state.jsx'
 import { Avatar, Empty, ErrorBanner, SkeletonList } from '../ui.jsx'
 import { dateLabel, fmtLv, lvName } from '../format.js'
 import GameSheet from './GameSheet.jsx'
+import { DEMO_MODE } from '../demo.js'
 
 const ORDER_TEXT = {
   paid: { label: '已支付', cls: 'ok' },
@@ -37,6 +38,10 @@ export default function Mine() {
       gamesReq.reload()
       ordersReq.reload()
     }} />)
+  }
+
+  function openDeleteAccount() {
+    sheet.openSheet(<DeleteAccountSheet />)
   }
 
   async function onLogout() {
@@ -171,20 +176,79 @@ export default function Mine() {
       )}
 
       <div className="rows">
-        <button className="row-i" type="button" onClick={openAccount}>
-          <span className="ic">👥</span> 切换演示账号 <span className="val">{me?.name}</span>
-        </button>
+        {DEMO_MODE && (
+          <button className="row-i" type="button" onClick={openAccount}>
+            <span className="ic">👥</span> 切换演示账号 <span className="val">{me?.name}</span>
+          </button>
+        )}
         <button className="row-i" type="button" onClick={() => toast.show('等级评测还没做（下一版）')}>
           <span className="ic">📈</span> 等级评测 <span className="val">去测一测</span>
         </button>
-        <button className="row-i" type="button" onClick={() => toast.show('数据在 Prisma + SQLite（server/prisma/dev.db）')}>
+        <button className="row-i" type="button" onClick={() => toast.show('数据在 PostgreSQL + Prisma（12 张表）')}>
           <span className="ic">🏸</span> 关于羽球局 <span className="val">v2.0</span>
         </button>
         <button className="row-i" type="button" onClick={onLogout}>
           <span className="ic">🚪</span> 退出登录 <span className="val">{me?.phone}</span>
         </button>
+        <button className="row-i" type="button" onClick={openDeleteAccount}>
+          <span className="ic">🗑</span> 注销账号 <span className="val">删除个人数据</span>
+        </button>
       </div>
       <div style={{ height: 20 }} />
+    </>
+  )
+}
+
+function DeleteAccountSheet() {
+  const { logout } = useAuth()
+  const sheet = useSheet()
+  const toast = useToast()
+  const [confirmText, setConfirmText] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit() {
+    if (busy || confirmText.trim() !== '注销') return
+    setBusy(true)
+    try {
+      await api.del('/me')
+      sheet.close()
+      await logout()
+      toast.show('账号已注销，个人数据已删除')
+    } catch (err) {
+      toast.show(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="grab" />
+      <div className="sheet-body">
+        <h2 className="d-title" style={{ fontSize: 18 }}>注销账号</h2>
+        <p className="d-sub">
+          注销后会永久删除你的手机号、动态、评论、点赞与订单记录；你发起的球局会被取消，
+          已缴纳的费用原路退回给其他球友。这个操作不能撤销。
+        </p>
+        <div className="field" style={{ marginTop: 14 }}>
+          <label>请输入「注销」以确认</label>
+          <input
+            type="text"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="注销"
+            maxLength={4}
+          />
+        </div>
+      </div>
+      <div className="sheet-foot" style={{ gap: 8 }}>
+        <button className="btn ghost" type="button" onClick={() => sheet.close()} disabled={busy}>
+          再想想
+        </button>
+        <button className="btn danger" type="button" onClick={submit} disabled={busy || confirmText.trim() !== '注销'}>
+          {busy ? '注销中…' : '确认注销'}
+        </button>
+      </div>
     </>
   )
 }

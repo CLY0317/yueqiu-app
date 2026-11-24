@@ -58,10 +58,10 @@ export function Intro() {
         <li><b>约球大厅</b>：筛选、搜索、报名、退出，名额由服务端校验，不会超卖。</li>
         <li><b>发起约球</b>：表单校验在前后端各做一遍，场馆 / 时长 / 水平都有约束。</li>
         <li><b>球友圈</b>：发动态、点赞，点赞关系存在用户维度。</li>
-        <li><b>我的</b>：场次、AA 支出、球友数由服务端聚合，可切换演示账号。</li>
+        <li><b>我的</b>：场次、AA 支出、球友数由服务端聚合，支持注销账号。</li>
       </ul>
       <p className="hint">
-        前端 <code>5173</code>，API <code>8787</code>，数据落盘在 <code>server/data/db.json</code>。
+        前端 <code>5173</code>，API <code>8787</code>，数据落在 <code>PostgreSQL + Prisma</code>。
         刷新页面登录态和报名都还在。
       </p>
     </aside>

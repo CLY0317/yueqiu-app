@@ -35,8 +35,10 @@ export async function login(page, phone) {
   await expect(page.getByRole('heading', { name: '羽球局' })).toBeVisible()
   await page.getByPlaceholder('11 位手机号').fill(phone)
   await page.getByRole('button', { name: '获取验证码' }).click()
-  // dev 渠道会把验证码回填到输入框
-  await expect(page.locator('.login-hint')).toContainText('已自动填入')
+  // dev 短信通道会把验证码回填到输入框。
+  // 这里断言输入框，而不是断言"演示环境已自动填入"那段提示——
+  // 那段提示受 DEMO_MODE 控制，生产构建里不渲染。
+  await expect(page.getByPlaceholder('6 位验证码')).toHaveValue(/^\d{6}$/)
   await page.getByRole('button', { name: /登录 \/ 注册/ }).click()
   await expect(page.locator('.tabbar')).toBeVisible()
 }

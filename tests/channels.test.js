@@ -26,7 +26,9 @@ describe('短信渠道', () => {
   })
 
   it('按 provider 选择渠道，未知取值直接报错', () => {
-    expect(createSmsChannel({ SMS_PROVIDER: 'dev' }).name).toBe('dev')
+    // dev 通道默认关闭，必须显式开启（它会把验证码回显给前端）
+    expect(() => createSmsChannel({ SMS_PROVIDER: 'dev' })).toThrow(/ALLOW_DEV_SMS/)
+    expect(createSmsChannel({ SMS_PROVIDER: 'dev', ALLOW_DEV_SMS: 'true' }).name).toBe('dev')
     expect(() => createSmsChannel({ SMS_PROVIDER: 'nope' })).toThrow(/未知的 SMS_PROVIDER/)
     // 选了 aliyun 但没配密钥，要在启动时就炸，而不是发短信时静默失败
     expect(() => createSmsChannel({ SMS_PROVIDER: 'aliyun' })).toThrow(/ALIYUN_SMS_ACCESS_KEY_ID/)

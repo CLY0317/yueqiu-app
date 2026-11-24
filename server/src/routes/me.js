@@ -180,6 +180,84 @@ router.post('/pay/wechat/notify', async (req, res) => {
   }
 })
 
+/**
+ * 注销账号（个人信息保护法要求提供注销途径）。
+ *
+ * 处理顺序很讲究：
+ * 1. 把ta 主持的局置为已解散、退掉其他人的已支付订单、释放场地；
+ * 2. 把这些局的发起人改挂到"已注销用户"这个系统占位账号——
+ *    Game.host 是必填关系（默认 Restrict），不转移就删不掉用户；
+ *    转移而不是删局，是为了让其他参与者的订单与退款记录留在库里。
+ * 3. 再删用户：RefreshToken / GamePlayer / Order / Post / PostLike / Comment / Notification
+ *    都是 onDelete: Cascade，随用户一起清掉。
+ */
+const SYSTEM_USER_ID = 'system-deleted-user'
+
+async function ensureSystemUser(tx) {
+  const existing = await tx.user.findUnique({ where: { id: SYSTEM_USER_ID } })
+  if (existing) return existing
+  return tx.user.create({
+    data: { id: SYSTEM_USER_ID, phone: '00000000000', name: '已注销用户', level: 3 },
+  })
+}
+
+router.delete('/me', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user.id
+    const result = await prisma.$transaction(async (tx) => {
+      const hosted = await tx.game.findMany({
+        where: { hostId: userId, status: 'open' },
+        include: { orders: true, players: { include: { user: true } }, slot: true },
+      })
+
+      const notifyIds = new Set()
+      for (const g of hosted) {
+        const paid = g.orders.filter((o) => o.status === 'paid')
+        if (paid.length) {
+          await tx.order.updateMany({
+            where: { id: { in: paid.map((o) => o.id) } },
+            data: { status: 'refunded', refundedAt: new Date() },
+          })
+        }
+        if (g.slotId) {
+          await tx.courtSlot.update({ where: { id: g.slotId }, data: { status: 'free' } })
+        }
+        g.players.forEach((p) => {
+          if (p.userId !== userId) notifyIds.add(p.userId)
+        })
+      }
+
+      if (hosted.length) {
+        const sys = await ensureSystemUser(tx)
+        await tx.game.updateMany({
+          where: { id: { in: hosted.map((g) => g.id) } },
+          data: { status: 'cancelled', hostId: sys.id, version: { increment: 1 } },
+        })
+      }
+
+      // 短信记录没有外键，按手机号单独清
+      await tx.smsCode.deleteMany({ where: { phone: req.user.phone } })
+      await tx.user.delete({ where: { id: userId } })
+
+      return { cancelledGames: hosted.length, notifyIds: [...notifyIds] }
+    })
+
+    await Promise.all(
+      result.notifyIds.map((uid) =>
+        notify(uid, {
+          type: 'game_cancel',
+          title: '有球局被解散了',
+          body: '发起人注销了账号，该球局已取消，已缴纳的费用已原路退回',
+        }),
+      ),
+    )
+
+    res.json({ ok: true, cancelledGames: result.cancelledGames })
+  } catch (err) {
+    next(err)
+  }
+})
+
 /* ------------------------------ 通知 ------------------------------ */
 
 router.get('/notifications', requireAuth, async (req, res, next) => {

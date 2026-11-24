@@ -18,6 +18,9 @@ env:
   # 仅 CI 的一次性值，不要与真实环境共用
   JWT_SECRET: ci-only-not-a-real-secret
   DEV_SMS: 'true'
+  # dev 短信通道默认关闭，测试与端到端需要显式打开
+  ALLOW_DEV_SMS: 'true'
+  SMS_PROVIDER: dev
 
 jobs:
   # 作业一：接口测试 —— 脚本自己重建 yueqiu_test 库，不碰主库

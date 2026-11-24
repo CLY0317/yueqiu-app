@@ -11,6 +11,8 @@ export default defineConfig({
       DATABASE_URL: process.env.TEST_DATABASE_URL || 'postgresql://yueqiu:yueqiu@127.0.0.1:5432/yueqiu_test?schema=public',
       JWT_SECRET: 'test-secret',
       DEV_SMS: 'true',
+      ALLOW_DEV_SMS: 'true',
+      SMS_PROVIDER: 'dev',
     },
   },
 })

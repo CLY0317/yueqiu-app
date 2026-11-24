@@ -67,6 +67,32 @@ test('评论：发布动态并评论，评论内容与计数同步更新', async
   await expect(post.locator('.p-acts button').nth(1)).toContainText('💬 1')
 })
 
+test('注销账号：二次确认后删除账号并回到登录页', async ({ page }) => {
+  const phone = newPhone()
+  await login(page, phone)
+
+  await tab(page, '我的').click()
+  await page.getByRole('button', { name: /注销账号/ }).click()
+
+  // 没输入确认词时按钮不可点
+  const sheet = page.locator('.sheet.on')
+  const confirmBtn = sheet.getByRole('button', { name: '确认注销' })
+  await expect(confirmBtn).toBeDisabled()
+
+  await sheet.locator('input[placeholder="注销"]').fill('注销')
+  await expect(confirmBtn).toBeEnabled()
+  await confirmBtn.click()
+
+  // 回到登录页，且该手机号已不能再登录（账号已删除）
+  await expect(page.getByPlaceholder('11 位手机号')).toBeVisible()
+  await page.getByPlaceholder('11 位手机号').fill(phone)
+  await page.getByRole('button', { name: '获取验证码' }).click()
+  await expect(page.getByPlaceholder('6 位验证码')).toHaveValue(/^\d{6}$/)
+  await page.getByRole('button', { name: /登录 \/ 注册/ }).click()
+  // 注销后再用同一手机号登录会重新注册一个新账号（不是原来那个）
+  await expect(page.locator('.tabbar')).toBeVisible()
+})
+
 test('解散退款：发起人解散后，队友的已支付订单转已退款并收到通知', async ({ browser }) => {
   const hostCtx = await browser.newContext()
   const guestCtx = await browser.newContext()

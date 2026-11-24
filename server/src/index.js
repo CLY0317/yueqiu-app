@@ -1,6 +1,8 @@
-import { config, ROOT } from './env.js'
+import { config, ROOT, assertProductionConfig } from './env.js'
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -17,7 +19,45 @@ import { HttpError } from './util.js'
 
 export function createApp() {
   const app = express()
-  app.use(cors())
+  if (config.trustProxy) app.set('trust proxy', 1)
+
+  // 安全响应头：CSP / HSTS / X-Content-Type-Options / Referrer-Policy 等
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          // 前端大量使用 style={{...}} 内联样式，必须放行 unsafe-inline
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+          connectSrc: ["'self'"],
+          fontSrc: ["'self'", 'data:'],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+        },
+      },
+      // 开发环境与 CI 用 http，HSTS 交给反向代理处理
+      strictTransportSecurity: config.isProd ? undefined : false,
+      crossOriginEmbedderPolicy: false,
+    }),
+  )
+
+  // 跨域：生产只放行配置里列出来的来源；未配置就不放行任何来源
+  app.use(
+    cors({
+      origin(origin, cb) {
+        // 同源请求 / curl / 服务端调用没有 Origin 头
+        if (!origin) return cb(null, true)
+        if (!config.corsOrigins.length) return cb(null, false)
+        cb(null, config.corsOrigins.includes(origin))
+      },
+      credentials: true,
+    }),
+  )
+
   app.use(
     express.json({
       limit: '256kb',
@@ -29,6 +69,17 @@ export function createApp() {
   )
 
   const api = express.Router()
+
+  // 全局限流：防止单个 IP 把接口打爆
+  api.use(
+    rateLimit({
+      windowMs: 60_000,
+      max: config.rateLimit.apiPerIp,
+      standardHeaders: 'draft-7',
+      legacyHeaders: false,
+      message: { error: { code: 'RATE_LIMITED', message: '请求太频繁，请稍后再试' } },
+    }),
+  )
 
   api.get('/health', async (_req, res) => {
     const [users, games, posts, orders] = await Promise.all([
@@ -106,6 +157,14 @@ const isMain =
   process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url
 
 if (isMain) {
+  // 配置不安全就直接拒绝启动，而不是静默降级
+  try {
+    assertProductionConfig()
+  } catch (err) {
+    console.error('[api] ' + err.message)
+    process.exit(1)
+  }
+
   const app = createApp()
   const server = app.listen(config.port, () => {
     console.log(`[api] 羽球局 API： http://127.0.0.1:${config.port}/api/health`)

@@ -34,10 +34,21 @@ export function devSmsChannel() {
   return {
     name: 'dev',
     async send(phone, code) {
-      console.log(`[sms:dev] ${phone} -> ${code}`)
+      // 日志里不落手机号全量与验证码：这两个都是敏感信息，日志文件往往被广泛传阅
+      console.log(`[sms:dev] ${maskPhone(phone)} -> ${maskCode(code)}`)
       return { delivered: true, dev: true }
     },
   }
+}
+
+export function maskPhone(phone) {
+  const s = String(phone || '')
+  return s.length >= 11 ? `${s.slice(0, 3)}****${s.slice(-4)}` : s
+}
+
+function maskCode(code) {
+  const s = String(code || '')
+  return s.length > 2 ? `${s.slice(0, 2)}****` : '****'
 }
 
 function need(env, key) {
@@ -93,7 +104,20 @@ export function aliyunSmsChannel(env = process.env) {
 
 export function createSmsChannel(env = process.env) {
   const provider = env.SMS_PROVIDER || 'dev'
-  if (provider === 'dev') return devSmsChannel()
+  if (provider === 'dev') {
+    // dev 通道会把验证码回显给前端 = 等于没有登录。
+    // 生产环境一律禁止；非生产也要显式打开（ALLOW_DEV_SMS=true），
+    // 避免"忘了配 SMS_PROVIDER"就把验证码发到网上。
+    const isProd = env.NODE_ENV === 'production'
+    const allowed = env.ALLOW_DEV_SMS === 'true' || env.ALLOW_DEV_SMS === '1'
+    if (isProd) {
+      throw new Error('生产环境禁止使用 dev 短信通道：请配置 SMS_PROVIDER=aliyun')
+    }
+    if (!allowed) {
+      throw new Error('dev 短信通道默认关闭，需要显式设置 ALLOW_DEV_SMS=true 才能启用')
+    }
+    return devSmsChannel()
+  }
   if (provider === 'aliyun') return aliyunSmsChannel(env)
   throw new Error(`未知的 SMS_PROVIDER：${provider}（可选 dev / aliyun）`)
 }
