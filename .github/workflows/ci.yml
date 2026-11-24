@@ -224,3 +224,61 @@ jobs:
       - name: 失败时输出 API 日志
         if: failure()
         run: cat api.log
+
+  # 作业四：镜像 —— 验证 Dockerfile 能构建、容器能跑起来、能连上数据库
+  docker:
+    name: 镜像（Dockerfile 构建 + 容器自检）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: yueqiu
+          POSTGRES_PASSWORD: yueqiu
+          POSTGRES_DB: yueqiu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yueqiu -d yueqiu"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 构建镜像
+        run: docker build -t yueqiu-app:ci .
+
+      - name: 应用迁移（用镜像里的 Prisma）
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL="postgresql://yueqiu:yueqiu@127.0.0.1:5432/yueqiu?schema=public" \
+            yueqiu-app:ci node node_modules/prisma/build/index.js migrate deploy --schema server/prisma/schema.prisma
+
+      - name: 启动容器并自检
+        run: |
+          docker run -d --name yueqiu-ci --network host \
+            -e DATABASE_URL="postgresql://yueqiu:yueqiu@127.0.0.1:5432/yueqiu?schema=public" \
+            -e JWT_SECRET="$(head -c 48 /dev/urandom | base64 | tr -d '\n')" \
+            -e NODE_ENV=production \
+            -e SMS_PROVIDER=aliyun \
+            -e ALIYUN_SMS_ACCESS_KEY_ID=AKID \
+            -e ALIYUN_SMS_ACCESS_KEY_SECRET=SECRET \
+            -e ALIYUN_SMS_SIGN_NAME=test \
+            -e ALIYUN_SMS_TEMPLATE_CODE=SMS_TEST \
+            -e ALLOW_DEV_SMS=false \
+            -e DEV_SMS=false \
+            -e CORS_ORIGINS=http://127.0.0.1:8787 \
+            yueqiu-app:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8787/api/health; then echo " <- 容器健康"; exit 0; fi
+            sleep 2
+          done
+          echo "容器没起来，日志："
+          docker logs yueqiu-ci
+          exit 1
+
+      - name: 失败时输出容器日志
+        if: failure()
+        run: docker logs yueqiu-ci || true
