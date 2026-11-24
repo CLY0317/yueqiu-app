@@ -87,8 +87,9 @@ services:
       app:
         condition: service_healthy
     environment:
-      DOMAIN: ${DOMAIN:?必须设置，例如 yueqiu.example.com}
-      EMAIL: ${ACME_EMAIL:-}
+      # 有域名就用域名（Caddy 自动 HTTPS）；只有 IP 就写 http://IP（明文）
+      SITE_ADDRESS: ${SITE_ADDRESS:?必须设置，例如 yueqiu.example.com 或 http://1.2.3.4}
+      ACME_EMAIL: ${ACME_EMAIL:-}
     ports:
       - '80:80'
       - '443:443'

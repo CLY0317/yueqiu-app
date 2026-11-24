@@ -10,7 +10,11 @@
 	# 生产环境建议关掉 admin API（默认只监听 localhost，无所谓）
 }
 
-{$DOMAIN} {
+# SITE_ADDRESS 决定是否上 HTTPS：
+#   有域名：SITE_ADDRESS=yueqiu.example.com  → Caddy 自动申请并续期 Let's Encrypt 证书
+#   只有 IP：SITE_ADDRESS=http://1.2.3.4      → 只走明文 HTTP（Let's Encrypt 不签发 IP 证书）
+# 换到域名时只需要改这一个值，Caddy 会自动把 80 的流量引导到 443 并签发证书。
+{$SITE_ADDRESS} {
 	encode zstd gzip
 
 	# 安全响应头（应用侧也有一份，这里是反向代理层的兜底）
