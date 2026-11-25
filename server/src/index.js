@@ -48,6 +48,8 @@ export function createApp() {
   // 注意 CSP 里的 upgrade-insecure-requests：它会把页面引用的子资源（JS/CSS）
   // 强制升级到 HTTPS。只有在真的有 TLS 时才加——否则纯 HTTP 部署（还没有域名、
   // 签不了证书）会因为脚本加载失败而白屏。
+  // helmet 的默认 CSP 自带 upgrade-insecure-requests，
+  // 显式给 null 才能关掉（给 [] 是启用，缺省是沿用默认值）。
   const cspDirectives = (upgradeInsecure) => ({
     defaultSrc: ["'self'"],
     scriptSrc: ["'self'"],
@@ -60,7 +62,7 @@ export function createApp() {
     frameAncestors: ["'none'"],
     baseUri: ["'self'"],
     formAction: ["'self'"],
-    ...(upgradeInsecure ? { upgradeInsecureRequests: [] } : {}),
+    upgradeInsecureRequests: upgradeInsecure ? [] : null,
   })
 
   const helmetHttps = helmet({
