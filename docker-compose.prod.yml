@@ -29,6 +29,9 @@ services:
     # 不把 5432 暴露到公网，只有应用容器能连
     expose:
       - '5432'
+    # 小内存机器（1G 内存）上必须限制，否则一个容器就能把整台机 OOM 掉
+    mem_limit: ${PG_MEM_LIMIT:-256m}
+    mem_reservation: 96m
 
   app:
     image: yueqiu-app:${YUEQIU_VERSION:-latest}
@@ -68,6 +71,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
     expose:
       - '8787'
+    mem_limit: ${APP_MEM_LIMIT:-256m}
+    mem_reservation: 128m
     healthcheck:
       test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:8787/api/health || exit 1']
       interval: 15s
@@ -95,6 +100,7 @@ services:
       - '80:80'
       - '443:443'
       - '443:443/udp'
+    mem_limit: ${CADDY_MEM_LIMIT:-64m}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
@@ -123,6 +129,7 @@ services:
     # 侧车不监听 HTTP，沿用镜像里的 HEALTHCHECK 会一直判不健康
     healthcheck:
       disable: true
+    mem_limit: ${WATCHDOG_MEM_LIMIT:-64m}
     volumes:
       - watchlog:/app/logs
 
@@ -147,6 +154,7 @@ services:
     command: ['sh', '-c', 'while true; do node scripts/backup.mjs; sleep ${BACKUP_INTERVAL_SECONDS:-86400}; done']
     healthcheck:
       disable: true
+    mem_limit: ${BACKUP_MEM_LIMIT:-96m}
     volumes:
       - backups:/backups
 
