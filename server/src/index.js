@@ -44,28 +44,40 @@ export function createApp() {
   })
 
   // 安全响应头：CSP / HSTS / X-Content-Type-Options / Referrer-Policy 等
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
-          // 前端大量使用 style={{...}} 内联样式，必须放行 unsafe-inline
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-          connectSrc: ["'self'"],
-          fontSrc: ["'self'", 'data:'],
-          objectSrc: ["'none'"],
-          frameAncestors: ["'none'"],
-          baseUri: ["'self'"],
-          formAction: ["'self'"],
-        },
-      },
-      // 开发环境与 CI 用 http，HSTS 交给反向代理处理
-      strictTransportSecurity: config.isProd ? undefined : false,
-      crossOriginEmbedderPolicy: false,
-    }),
-  )
+  //
+  // 注意 CSP 里的 upgrade-insecure-requests：它会把页面引用的子资源（JS/CSS）
+  // 强制升级到 HTTPS。只有在真的有 TLS 时才加——否则纯 HTTP 部署（还没有域名、
+  // 签不了证书）会因为脚本加载失败而白屏。
+  const cspDirectives = (upgradeInsecure) => ({
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'"],
+    // 前端大量使用 style={{...}} 内联样式，必须放行 unsafe-inline
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+    connectSrc: ["'self'"],
+    fontSrc: ["'self'", 'data:'],
+    objectSrc: ["'none'"],
+    frameAncestors: ["'none'"],
+    baseUri: ["'self'"],
+    formAction: ["'self'"],
+    ...(upgradeInsecure ? { upgradeInsecureRequests: [] } : {}),
+  })
+
+  const helmetHttps = helmet({
+    contentSecurityPolicy: { directives: cspDirectives(true) },
+    strictTransportSecurity: config.isProd ? undefined : false,
+    crossOriginEmbedderPolicy: false,
+  })
+  const helmetHttp = helmet({
+    contentSecurityPolicy: { directives: cspDirectives(false) },
+    strictTransportSecurity: false,
+    crossOriginEmbedderPolicy: false,
+  })
+
+  app.use((req, res, next) => {
+    const proto = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http')
+    return (proto === 'https' ? helmetHttps : helmetHttp)(req, res, next)
+  })
 
   // 跨域：生产只放行配置里列出来的来源；未配置就不放行任何来源
   app.use(
