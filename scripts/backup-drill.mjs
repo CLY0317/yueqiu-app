@@ -80,14 +80,11 @@ function main() {
   const before = Number(psql(`select count(*) from "User";`))
   console.log(`    标记行已写入，用户数 ${before}`)
 
-  step(3, '破坏：drop schema public cascade 并用迁移重建空表')
+  step(3, '破坏：drop schema public cascade')
   psql('drop schema public cascade; create schema public;')
-  execFileSync(node, ['node_modules/prisma/build/index.js', 'migrate', 'deploy', '--schema', SCHEMA], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env },
-  })
+  // 不在这里跑 migrate deploy 重建空表：
+  //   - 备份包里本来就带 CREATE TABLE，恢复时会自己建表；
+  //   - migrate deploy 依赖 node_modules，在只 clone 了代码的机器上跑不了。
   const empty = Number(psql(`select count(*) from "User";`))
   console.log(`    库已清空，用户数 ${empty}`)
 
