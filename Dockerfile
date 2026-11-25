@@ -3,20 +3,16 @@
 ARG NODE_IMAGE=node:22-bookworm-slim
 
 # 换 Debian 源为阿里云镜像：官方源在国内慢到能把一次构建拖到半小时
-# （bookworm 用 deb822 格式的 debian.sources，老版本才是 sources.list）
-RUN set -eux; \
-  if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
-    sed -i 's|https\?://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g; s|https\?://security.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources; \
-  fi; \
-  if [ -f /etc/apt/sources.list ]; then \
-    sed -i 's|https\?://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g; s|https\?://security.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list; \
-  fi
+# （注意：RUN 必须写在某个 FROM 之后，写在最前面会报 "no build stage in current context"）
+# 做法：把换源做成脚本，在每个 stage 里 apt-get update 之前调用
 
 # ---------- 构建阶段 ----------
 FROM ${NODE_IMAGE} AS builder
 
 # pnpm 与 Prisma 需要的系统包
-RUN apt-get update \
+COPY deploy/apt-mirror.sh /tmp/apt-mirror.sh
+RUN chmod +x /tmp/apt-mirror.sh && /tmp/apt-mirror.sh \
+  && apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
@@ -36,7 +32,9 @@ RUN pnpm db:generate \
 # ---------- 运行阶段 ----------
 FROM ${NODE_IMAGE} AS runner
 
-RUN apt-get update \
+COPY deploy/apt-mirror.sh /tmp/apt-mirror.sh
+RUN chmod +x /tmp/apt-mirror.sh && /tmp/apt-mirror.sh \
+  && apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates curl gnupg \
   && install -d /usr/share/postgresql-common/pgdg \
   && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
