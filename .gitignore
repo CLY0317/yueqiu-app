@@ -19,3 +19,5 @@ blob-report/
 logs/
 backups/db/
 deploy/.env.production
+deploy/.env.production.bak
+deploy/.last-version
