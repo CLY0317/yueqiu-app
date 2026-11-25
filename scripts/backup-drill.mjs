@@ -38,6 +38,15 @@ const psql = (sql) =>
     { encoding: 'utf8', env: { ...process.env, PGPASSWORD: decodeURIComponent(new URL(process.env.DATABASE_URL).password || '') } },
   ).trim()
 
+/** 表可能还不存在（比如刚 drop 完 schema），出错时按 0 处理 */
+const psqlSafe = (sql) => {
+  try {
+    return psql(sql)
+  } catch {
+    return '0'
+  }
+}
+
 const node = process.execPath
 const run = (script, args = []) =>
   execFileSync(node, [path.join(ROOT, 'scripts', script), ...args], {
@@ -85,15 +94,15 @@ function main() {
   // 不在这里跑 migrate deploy 重建空表：
   //   - 备份包里本来就带 CREATE TABLE，恢复时会自己建表；
   //   - migrate deploy 依赖 node_modules，在只 clone 了代码的机器上跑不了。
-  const empty = Number(psql(`select count(*) from "User";`))
+  const empty = Number(psqlSafe(`select count(*) from "User";`))
   console.log(`    库已清空，用户数 ${empty}`)
 
   step(4, '从备份恢复')
   run('restore.mjs', [dump])
 
   step(5, '核对：行数与清单一致，且标记行已消失')
-  const after = Number(psql(`select count(*) from "User";`))
-  const markerLeft = Number(psql(`select count(*) from "User" where phone = '${MARKER_PHONE}';`))
+  const after = Number(psqlSafe(`select count(*) from "User";`))
+  const markerLeft = Number(psqlSafe(`select count(*) from "User" where phone = '${MARKER_PHONE}';`))
   const expected = manifest.tableRows.User
 
   const problems = []
