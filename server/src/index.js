@@ -74,6 +74,8 @@ export function createApp() {
     contentSecurityPolicy: { directives: cspDirectives(false) },
     strictTransportSecurity: false,
     crossOriginEmbedderPolicy: false,
+    // HTTP 源不是"可信来源"，浏览器会忽略 COOP 并在控制台报警
+    crossOriginOpenerPolicy: false,
   })
 
   app.use((req, res, next) => {
