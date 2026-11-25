@@ -2,6 +2,16 @@
 #   docker build --build-arg NODE_IMAGE=docker.m.daocloud.io/library/node:22-bookworm-slim .
 ARG NODE_IMAGE=node:22-bookworm-slim
 
+# 换 Debian 源为阿里云镜像：官方源在国内慢到能把一次构建拖到半小时
+# （bookworm 用 deb822 格式的 debian.sources，老版本才是 sources.list）
+RUN set -eux; \
+  if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+    sed -i 's|https\?://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g; s|https\?://security.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources; \
+  fi; \
+  if [ -f /etc/apt/sources.list ]; then \
+    sed -i 's|https\?://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g; s|https\?://security.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list; \
+  fi
+
 # ---------- 构建阶段 ----------
 FROM ${NODE_IMAGE} AS builder
 
